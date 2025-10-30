@@ -11,7 +11,7 @@ import {
 } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
-import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboardWithWordVisibility } from './core/fragments-game';
+import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboardsWithWordVisibility } from './core/fragments-game';
 
 const app = express();
 
@@ -329,14 +329,15 @@ router.get<{ postId: string }, GetLeaderboardResponse | { status: string; messag
 
     try {
       const [leaderboardData, dailyFragment] = await Promise.all([
-        getDailyLeaderboardWithWordVisibility(),
+        getDailyLeaderboardsWithWordVisibility(),
         getDailyFragment()
       ]);
 
       res.json({
         type: 'leaderboard',
         postId,
-        leaderboard: leaderboardData.leaderboard,
+        scoreLeaderboard: leaderboardData.scoreLeaderboard,
+        wordLeaderboard: leaderboardData.wordLeaderboard,
         dailyFragment,
         showWords: leaderboardData.showWords,
       });

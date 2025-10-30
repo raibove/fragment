@@ -16,30 +16,17 @@ const FRAGMENTS = [
   'the', 'top', 'try', 'two', 'use', 'way', 'who', 'why', 'win', 'yes', 'you'
 ];
 
-let wordList: Set<string> | null = null;
 
-async function loadWordList(): Promise<Set<string>> {
-  if (wordList) return wordList;
-  
-  try {
-    // In a real implementation, you'd load from the words.txt file
-    // For now, we'll use a basic word validation approach
-    wordList = new Set();
-    return wordList;
-  } catch (error) {
-    console.error('Failed to load word list:', error);
-    return new Set();
-  }
-}
 
 function getRandomFragment(): string {
-  return FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
+  const fragment = FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
+  return fragment || 'an'; // Fallback
 }
 
 function getCurrentDateKey(): string {
   // Get current date in YYYY-MM-DD format for consistent daily fragments
   const now = new Date();
-  return now.toISOString().split('T')[0];
+  return now.toISOString().split('T')[0] || 'default';
 }
 
 async function getDailyFragment(): Promise<string> {
@@ -61,17 +48,17 @@ async function getDailyFragment(): Promise<string> {
     
     const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
     
-    await redis.set(fragmentKey, fragment, { ex: secondsUntilMidnight });
+    await redis.set(fragmentKey, fragment, { expiration: new Date(Date.now() + secondsUntilMidnight * 1000) });
     
     console.log(`New daily fragment set: ${fragment} (expires in ${secondsUntilMidnight} seconds)`);
   }
   
-  return fragment;
+  return fragment || getRandomFragment(); // Fallback in case of null
 }
 
-async function getDailyLeaderboard(): Promise<Array<{username: string, score: number, bestWord: string}>> {
+async function getDailyScoreLeaderboard(): Promise<Array<{username: string, score: number, bestWord: string}>> {
   const dateKey = getCurrentDateKey();
-  const leaderboardKey = `daily_leaderboard:${dateKey}`;
+  const leaderboardKey = `daily_score_leaderboard:${dateKey}`;
   
   try {
     const leaderboardData = await redis.get(leaderboardKey);
@@ -79,7 +66,22 @@ async function getDailyLeaderboard(): Promise<Array<{username: string, score: nu
     
     return JSON.parse(leaderboardData);
   } catch (error) {
-    console.error('Failed to get leaderboard:', error);
+    console.error('Failed to get score leaderboard:', error);
+    return [];
+  }
+}
+
+async function getDailyWordLeaderboard(): Promise<Array<{username: string, score: number, bestWord: string}>> {
+  const dateKey = getCurrentDateKey();
+  const leaderboardKey = `daily_word_leaderboard:${dateKey}`;
+  
+  try {
+    const leaderboardData = await redis.get(leaderboardKey);
+    if (!leaderboardData) return [];
+    
+    return JSON.parse(leaderboardData);
+  } catch (error) {
+    console.error('Failed to get word leaderboard:', error);
     return [];
   }
 }
@@ -98,45 +100,84 @@ function isDayComplete(): boolean {
   return timeUntilMidnight <= oneHour;
 }
 
-async function getDailyLeaderboardWithWordVisibility(): Promise<{
-  leaderboard: Array<{username: string, score: number, bestWord: string}>,
+async function getDailyLeaderboardsWithWordVisibility(): Promise<{
+  scoreLeaderboard: Array<{username: string, score: number, bestWord: string}>,
+  wordLeaderboard: Array<{username: string, score: number, bestWord: string}>,
   showWords: boolean
 }> {
-  const leaderboard = await getDailyLeaderboard();
+  const [scoreLeaderboard, wordLeaderboard] = await Promise.all([
+    getDailyScoreLeaderboard(),
+    getDailyWordLeaderboard()
+  ]);
   const showWords = isDayComplete();
   
-  return {
-    leaderboard: showWords ? leaderboard : leaderboard.map(entry => ({
+  const hideWords = (leaderboard: Array<{username: string, score: number, bestWord: string}>, isWordLeaderboard: boolean = false) => {
+    if (showWords) {
+      return leaderboard;
+    }
+    
+    return leaderboard.map((entry, index) => ({
       ...entry,
-      bestWord: '***' // Hide words until day is complete
-    })),
+      bestWord: entry.bestWord ? (
+        // For word leaderboard, only reveal the longest word (#1 position)
+        isWordLeaderboard && index === 0 ? entry.bestWord : '***'
+      ) : ''
+    }));
+  };
+  
+  return {
+    scoreLeaderboard: hideWords(scoreLeaderboard, false),
+    wordLeaderboard: hideWords(wordLeaderboard, true),
     showWords
   };
 }
 
-async function updateDailyLeaderboard(username: string, score: number, bestWord: string): Promise<void> {
+async function updateDailyLeaderboards(username: string, score: number, bestWord: string): Promise<void> {
   const dateKey = getCurrentDateKey();
-  const leaderboardKey = `daily_leaderboard:${dateKey}`;
+  const scoreLeaderboardKey = `daily_score_leaderboard:${dateKey}`;
+  const wordLeaderboardKey = `daily_word_leaderboard:${dateKey}`;
   
   try {
-    const leaderboard = await getDailyLeaderboard();
+    const [scoreLeaderboard, wordLeaderboard] = await Promise.all([
+      getDailyScoreLeaderboard(),
+      getDailyWordLeaderboard()
+    ]);
     
-    // Find existing entry or create new one
-    const existingIndex = leaderboard.findIndex(entry => entry.username === username);
-    
-    if (existingIndex >= 0) {
+    // Update score leaderboard
+    const scoreExistingIndex = scoreLeaderboard.findIndex(entry => entry.username === username);
+    if (scoreExistingIndex >= 0) {
       // Update if new score is higher
-      if (score > leaderboard[existingIndex].score) {
-        leaderboard[existingIndex] = { username, score, bestWord };
+      const existingEntry = scoreLeaderboard[scoreExistingIndex];
+      if (existingEntry && score > existingEntry.score) {
+        scoreLeaderboard[scoreExistingIndex] = { username, score, bestWord };
       }
     } else {
       // Add new entry
-      leaderboard.push({ username, score, bestWord });
+      scoreLeaderboard.push({ username, score, bestWord });
     }
     
-    // Sort by score (highest first) and keep top 10
-    leaderboard.sort((a, b) => b.score - a.score);
-    const topLeaderboard = leaderboard.slice(0, 10);
+    // Update word leaderboard - always update with the longest word for this user
+    const wordExistingIndex = wordLeaderboard.findIndex(entry => entry.username === username);
+    if (wordExistingIndex >= 0) {
+      // Update if new word is longer
+      const existingEntry = wordLeaderboard[wordExistingIndex];
+      const existingWordLength = existingEntry?.bestWord?.length || 0;
+      if (bestWord.length > existingWordLength) {
+        // Keep the higher score between the two entries
+        const betterScore = Math.max(score, existingEntry?.score || 0);
+        wordLeaderboard[wordExistingIndex] = { username, score: betterScore, bestWord };
+      }
+    } else {
+      // Add new entry
+      wordLeaderboard.push({ username, score, bestWord });
+    }
+    
+    // Sort and keep top 10 for each leaderboard
+    scoreLeaderboard.sort((a, b) => b.score - a.score);
+    const topScoreLeaderboard = scoreLeaderboard.slice(0, 10);
+    
+    wordLeaderboard.sort((a, b) => (b.bestWord?.length || 0) - (a.bestWord?.length || 0));
+    const topWordLeaderboard = wordLeaderboard.slice(0, 10);
     
     // Store with same expiration as daily fragment
     const now = new Date();
@@ -146,9 +187,13 @@ async function updateDailyLeaderboard(username: string, score: number, bestWord:
     
     const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
     
-    await redis.set(leaderboardKey, JSON.stringify(topLeaderboard), { ex: secondsUntilMidnight });
+    const expirationDate = new Date(Date.now() + secondsUntilMidnight * 1000);
+    await Promise.all([
+      redis.set(scoreLeaderboardKey, JSON.stringify(topScoreLeaderboard), { expiration: expirationDate }),
+      redis.set(wordLeaderboardKey, JSON.stringify(topWordLeaderboard), { expiration: expirationDate })
+    ]);
   } catch (error) {
-    console.error('Failed to update leaderboard:', error);
+    console.error('Failed to update leaderboards:', error);
   }
 }
 
@@ -192,7 +237,7 @@ export async function createNewGame(postId: string, username: string): Promise<G
   
   // Store game state in Redis with user-specific key
   const gameKey = `game:${postId}:${username}`;
-  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 }); // 5 minute expiry
+  await redis.set(gameKey, JSON.stringify(gameState), { expiration: new Date(Date.now() + 300 * 1000) }); // 5 minute expiry
   
   return gameState;
 }
@@ -251,7 +296,7 @@ export async function submitWord(postId: string, username: string, word: string)
   
   // Save updated game state
   const gameKey = `game:${postId}:${username}`;
-  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 });
+  await redis.set(gameKey, JSON.stringify(gameState), { expiration: new Date(Date.now() + 300 * 1000) });
   
   return {
     valid,
@@ -268,16 +313,16 @@ export async function endGame(postId: string, username: string): Promise<GameSta
   gameState.gameActive = false;
   gameState.timeLeft = 0;
   
-  // Update leaderboard if player has a score
-  if (gameState.score > 0) {
-    await updateDailyLeaderboard(username, gameState.score, gameState.bestWord);
+  // Update leaderboards if player has a score and a best word
+  if (gameState.score > 0 && gameState.bestWord && gameState.bestWord.length > 0) {
+    await updateDailyLeaderboards(username, gameState.score, gameState.bestWord);
   }
   
   // Save final game state
   const gameKey = `game:${postId}:${username}`;
-  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 });
+  await redis.set(gameKey, JSON.stringify(gameState), { expiration: new Date(Date.now() + 300 * 1000) });
   
   return gameState;
 }
 
-export { getDailyFragment, getDailyLeaderboard, getDailyLeaderboardWithWordVisibility };
+export { getDailyFragment, getDailyScoreLeaderboard, getDailyWordLeaderboard, getDailyLeaderboardsWithWordVisibility };

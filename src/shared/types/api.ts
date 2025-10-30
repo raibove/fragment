@@ -60,7 +60,8 @@ export type LeaderboardEntry = {
 export type GetLeaderboardResponse = {
   type: 'leaderboard';
   postId: string;
-  leaderboard: LeaderboardEntry[];
+  scoreLeaderboard: LeaderboardEntry[];
+  wordLeaderboard: LeaderboardEntry[];
   dailyFragment: string;
   showWords: boolean;
 };
