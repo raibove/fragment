@@ -6,11 +6,12 @@ import {
   NewGameResponse,
   SubmitWordRequest,
   SubmitWordResponse,
-  GetGameStateResponse
+  GetGameStateResponse,
+  GetLeaderboardResponse
 } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
-import { createNewGame, getGameState, submitWord, endGame } from './core/fragments-game';
+import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboard } from './core/fragments-game';
 
 const app = express();
 
@@ -147,7 +148,16 @@ router.post<{ postId: string }, NewGameResponse | { status: string; message: str
     }
 
     try {
-      const gameState = await createNewGame(postId);
+      const username = await reddit.getCurrentUsername();
+      if (!username) {
+        res.status(400).json({
+          status: 'error',
+          message: 'User authentication required',
+        });
+        return;
+      }
+
+      const gameState = await createNewGame(postId, username);
       res.json({
         type: 'new-game',
         postId,
@@ -176,7 +186,16 @@ router.get<{ postId: string }, GetGameStateResponse | { status: string; message:
     }
 
     try {
-      const gameState = await getGameState(postId);
+      const username = await reddit.getCurrentUsername();
+      if (!username) {
+        res.status(400).json({
+          status: 'error',
+          message: 'User authentication required',
+        });
+        return;
+      }
+
+      const gameState = await getGameState(postId, username);
       if (!gameState) {
         res.status(404).json({
           status: 'error',
@@ -222,7 +241,16 @@ router.post<{ postId: string }, SubmitWordResponse | { status: string; message: 
     }
 
     try {
-      const result = await submitWord(postId, word.trim());
+      const username = await reddit.getCurrentUsername();
+      if (!username) {
+        res.status(400).json({
+          status: 'error',
+          message: 'User authentication required',
+        });
+        return;
+      }
+
+      const result = await submitWord(postId, username, word.trim());
       res.json({
         type: 'submit-word',
         postId,
@@ -254,7 +282,16 @@ router.post<{ postId: string }, GetGameStateResponse | { status: string; message
     }
 
     try {
-      const gameState = await endGame(postId);
+      const username = await reddit.getCurrentUsername();
+      if (!username) {
+        res.status(400).json({
+          status: 'error',
+          message: 'User authentication required',
+        });
+        return;
+      }
+
+      const gameState = await endGame(postId, username);
       if (!gameState) {
         res.status(404).json({
           status: 'error',
@@ -273,6 +310,40 @@ router.post<{ postId: string }, GetGameStateResponse | { status: string; message
       res.status(400).json({
         status: 'error',
         message: 'Failed to end game',
+      });
+    }
+  }
+);
+
+router.get<{ postId: string }, GetLeaderboardResponse | { status: string; message: string }>(
+  '/api/leaderboard',
+  async (_req, res): Promise<void> => {
+    const { postId } = context;
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required',
+      });
+      return;
+    }
+
+    try {
+      const [leaderboard, dailyFragment] = await Promise.all([
+        getDailyLeaderboard(),
+        getDailyFragment()
+      ]);
+
+      res.json({
+        type: 'leaderboard',
+        postId,
+        leaderboard,
+        dailyFragment,
+      });
+    } catch (error) {
+      console.error(`Error getting leaderboard: ${error}`);
+      res.status(400).json({
+        status: 'error',
+        message: 'Failed to get leaderboard',
       });
     }
   }

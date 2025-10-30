@@ -36,6 +36,122 @@ function getRandomFragment(): string {
   return FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
 }
 
+function getCurrentDateKey(): string {
+  // Get current date in YYYY-MM-DD format for consistent daily fragments
+  const now = new Date();
+  return now.toISOString().split('T')[0];
+}
+
+async function getDailyFragment(): Promise<string> {
+  const dateKey = getCurrentDateKey();
+  const fragmentKey = `daily_fragment:${dateKey}`;
+  
+  // Try to get existing fragment for today
+  let fragment = await redis.get(fragmentKey);
+  
+  if (!fragment) {
+    // Generate new fragment for today
+    fragment = getRandomFragment();
+    
+    // Store with expiration at end of day (24 hours from now)
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+    
+    const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
+    
+    await redis.set(fragmentKey, fragment, { ex: secondsUntilMidnight });
+    
+    console.log(`New daily fragment set: ${fragment} (expires in ${secondsUntilMidnight} seconds)`);
+  }
+  
+  return fragment;
+}
+
+async function getDailyLeaderboard(): Promise<Array<{username: string, score: number, bestWord: string}>> {
+  const dateKey = getCurrentDateKey();
+  const leaderboardKey = `daily_leaderboard:${dateKey}`;
+  
+  try {
+    const leaderboardData = await redis.get(leaderboardKey);
+    if (!leaderboardData) return [];
+    
+    return JSON.parse(leaderboardData);
+  } catch (error) {
+    console.error('Failed to get leaderboard:', error);
+    return [];
+  }
+}
+
+function isDayComplete(): boolean {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  
+  // Check if we're within the last hour of the day (23:00-24:00)
+  // This gives some buffer time for the day to be considered "complete"
+  const timeUntilMidnight = tomorrow.getTime() - now.getTime();
+  const oneHour = 60 * 60 * 1000;
+  
+  return timeUntilMidnight <= oneHour;
+}
+
+async function getDailyLeaderboardWithWordVisibility(): Promise<{
+  leaderboard: Array<{username: string, score: number, bestWord: string}>,
+  showWords: boolean
+}> {
+  const leaderboard = await getDailyLeaderboard();
+  const showWords = isDayComplete();
+  
+  return {
+    leaderboard: showWords ? leaderboard : leaderboard.map(entry => ({
+      ...entry,
+      bestWord: '***' // Hide words until day is complete
+    })),
+    showWords
+  };
+}
+
+async function updateDailyLeaderboard(username: string, score: number, bestWord: string): Promise<void> {
+  const dateKey = getCurrentDateKey();
+  const leaderboardKey = `daily_leaderboard:${dateKey}`;
+  
+  try {
+    const leaderboard = await getDailyLeaderboard();
+    
+    // Find existing entry or create new one
+    const existingIndex = leaderboard.findIndex(entry => entry.username === username);
+    
+    if (existingIndex >= 0) {
+      // Update if new score is higher
+      if (score > leaderboard[existingIndex].score) {
+        leaderboard[existingIndex] = { username, score, bestWord };
+      }
+    } else {
+      // Add new entry
+      leaderboard.push({ username, score, bestWord });
+    }
+    
+    // Sort by score (highest first) and keep top 10
+    leaderboard.sort((a, b) => b.score - a.score);
+    const topLeaderboard = leaderboard.slice(0, 10);
+    
+    // Store with same expiration as daily fragment
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    
+    const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
+    
+    await redis.set(leaderboardKey, JSON.stringify(topLeaderboard), { ex: secondsUntilMidnight });
+  } catch (error) {
+    console.error('Failed to update leaderboard:', error);
+  }
+}
+
 function isValidWord(word: string, fragment: string): boolean {
   // Basic validation - word must start with fragment and be at least 3 characters
   if (!word.toLowerCase().startsWith(fragment.toLowerCase())) {
@@ -63,8 +179,8 @@ function calculateScore(word: string): number {
   return baseScore + lengthBonus;
 }
 
-export async function createNewGame(postId: string): Promise<GameState> {
-  const fragment = getRandomFragment();
+export async function createNewGame(postId: string, username: string): Promise<GameState> {
+  const fragment = await getDailyFragment();
   const gameState: GameState = {
     fragment,
     currentWord: '',
@@ -74,14 +190,16 @@ export async function createNewGame(postId: string): Promise<GameState> {
     gameActive: true
   };
   
-  // Store game state in Redis
-  await redis.set(`game:${postId}`, JSON.stringify(gameState), { ex: 300 }); // 5 minute expiry
+  // Store game state in Redis with user-specific key
+  const gameKey = `game:${postId}:${username}`;
+  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 }); // 5 minute expiry
   
   return gameState;
 }
 
-export async function getGameState(postId: string): Promise<GameState | null> {
-  const gameData = await redis.get(`game:${postId}`);
+export async function getGameState(postId: string, username: string): Promise<GameState | null> {
+  const gameKey = `game:${postId}:${username}`;
+  const gameData = await redis.get(gameKey);
   if (!gameData) return null;
   
   try {
@@ -92,13 +210,13 @@ export async function getGameState(postId: string): Promise<GameState | null> {
   }
 }
 
-export async function submitWord(postId: string, word: string): Promise<{
+export async function submitWord(postId: string, username: string, word: string): Promise<{
   valid: boolean;
   score: number;
   gameState: GameState;
   message: string;
 }> {
-  const gameState = await getGameState(postId);
+  const gameState = await getGameState(postId, username);
   
   if (!gameState) {
     throw new Error('Game not found');
@@ -132,7 +250,8 @@ export async function submitWord(postId: string, word: string): Promise<{
   }
   
   // Save updated game state
-  await redis.set(`game:${postId}`, JSON.stringify(gameState), { ex: 300 });
+  const gameKey = `game:${postId}:${username}`;
+  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 });
   
   return {
     valid,
@@ -142,15 +261,23 @@ export async function submitWord(postId: string, word: string): Promise<{
   };
 }
 
-export async function endGame(postId: string): Promise<GameState | null> {
-  const gameState = await getGameState(postId);
+export async function endGame(postId: string, username: string): Promise<GameState | null> {
+  const gameState = await getGameState(postId, username);
   if (!gameState) return null;
   
   gameState.gameActive = false;
   gameState.timeLeft = 0;
   
+  // Update leaderboard if player has a score
+  if (gameState.score > 0) {
+    await updateDailyLeaderboard(username, gameState.score, gameState.bestWord);
+  }
+  
   // Save final game state
-  await redis.set(`game:${postId}`, JSON.stringify(gameState), { ex: 300 });
+  const gameKey = `game:${postId}:${username}`;
+  await redis.set(gameKey, JSON.stringify(gameState), { ex: 300 });
   
   return gameState;
 }
+
+export { getDailyFragment, getDailyLeaderboard };

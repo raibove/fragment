@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameState } from '../../shared/types/api';
+import { GameState, LeaderboardEntry } from '../../shared/types/api';
 
 interface FragmentsGameProps {
   username: string;
@@ -11,6 +11,9 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [dailyFragment, setDailyFragment] = useState<string>('');
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Timer effect
   useEffect(() => {
@@ -36,6 +39,19 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
     }
   }, [gameState]);
 
+  const loadLeaderboard = async () => {
+    try {
+      const response = await fetch('/api/leaderboard');
+      if (!response.ok) throw new Error('Failed to load leaderboard');
+      
+      const data = await response.json();
+      setLeaderboard(data.leaderboard);
+      setDailyFragment(data.dailyFragment);
+    } catch (error) {
+      console.error('Error loading leaderboard:', error);
+    }
+  };
+
   const startNewGame = async () => {
     setLoading(true);
     setMessage('');
@@ -51,6 +67,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       setGameState(data.gameState);
       setCurrentInput('');
       setMessage(`New game started! Create words starting with "${data.gameState.fragment}"`);
+      setShowLeaderboard(false);
     } catch (error) {
       setMessage('Failed to start new game. Please try again.');
       console.error('Error starting game:', error);
@@ -96,10 +113,18 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       const data = await response.json();
       setGameState(data.gameState);
       setMessage(`Game Over! Final score: ${data.gameState.score} points`);
+      
+      // Reload leaderboard after game ends
+      await loadLeaderboard();
     } catch (error) {
       console.error('Error ending game:', error);
     }
   };
+
+  // Load leaderboard on component mount
+  useEffect(() => {
+    loadLeaderboard();
+  }, []);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !loading) {
@@ -127,15 +152,59 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
         </div>
 
         {!gameState ? (
-          <div className="text-center">
+          <div className="text-center space-y-4">
+            {dailyFragment && (
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-bold text-lg text-blue-800">Today's Fragment</h3>
+                <div className="text-3xl font-bold text-blue-600 my-2">{dailyFragment}</div>
+                <p className="text-sm text-blue-600">Everyone gets the same fragment today!</p>
+              </div>
+            )}
+            
             <p className="text-gray-600 mb-4">Ready to test your vocabulary?</p>
-            <button
-              onClick={startNewGame}
-              disabled={loading}
-              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-            >
-              {loading ? 'Starting...' : 'Start New Game'}
-            </button>
+            
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={startNewGame}
+                disabled={loading}
+                className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              >
+                {loading ? 'Starting...' : 'Start New Game'}
+              </button>
+              
+              <button
+                onClick={() => setShowLeaderboard(!showLeaderboard)}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              >
+                {showLeaderboard ? 'Hide' : 'Show'} Leaderboard
+              </button>
+            </div>
+
+            {showLeaderboard && (
+              <div className="bg-gray-50 rounded-lg p-4 mt-4">
+                <h3 className="font-bold text-lg text-gray-800 mb-3">Today's Leaderboard</h3>
+                {leaderboard.length === 0 ? (
+                  <p className="text-gray-500">No scores yet today. Be the first!</p>
+                ) : (
+                  <div className="space-y-2">
+                    {leaderboard.map((entry, index) => (
+                      <div key={entry.username} className="flex justify-between items-center bg-white rounded p-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-500' : index === 2 ? 'text-orange-600' : 'text-gray-400'}`}>
+                            #{index + 1}
+                          </span>
+                          <span className="font-medium">{entry.username}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-green-600">{entry.score} pts</div>
+                          <div className="text-xs text-gray-500">{entry.bestWord}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -204,13 +273,50 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
                     <p className="text-gray-600">Best Word: {gameState.bestWord} ({gameState.bestWord.length} letters)</p>
                   )}
                 </div>
-                <button
-                  onClick={startNewGame}
-                  disabled={loading}
-                  className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-                >
-                  {loading ? 'Starting...' : 'Play Again'}
-                </button>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={startNewGame}
+                    disabled={loading}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                  >
+                    {loading ? 'Starting...' : 'Play Again'}
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowLeaderboard(!showLeaderboard)}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                  >
+                    {showLeaderboard ? 'Hide' : 'Show'} Leaderboard
+                  </button>
+                </div>
+
+                {showLeaderboard && (
+                  <div className="bg-gray-50 rounded-lg p-4 mt-4">
+                    <h3 className="font-bold text-lg text-gray-800 mb-3">Today's Leaderboard</h3>
+                    {leaderboard.length === 0 ? (
+                      <p className="text-gray-500">No scores yet today.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {leaderboard.map((entry, index) => (
+                          <div key={entry.username} className={`flex justify-between items-center rounded p-2 ${entry.username === username ? 'bg-blue-100' : 'bg-white'}`}>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-500' : index === 2 ? 'text-orange-600' : 'text-gray-400'}`}>
+                                #{index + 1}
+                              </span>
+                              <span className={`font-medium ${entry.username === username ? 'text-blue-700' : ''}`}>
+                                {entry.username} {entry.username === username ? '(You)' : ''}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-green-600">{entry.score} pts</div>
+                              <div className="text-xs text-gray-500">{entry.bestWord}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -233,6 +339,8 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>💡 Longer words earn more points!</p>
           <p>🎯 Try to find the longest possible word</p>
+          <p>🌍 Everyone gets the same daily fragment</p>
+          <p>🔄 New fragment every 24 hours</p>
         </div>
       </div>
     </div>

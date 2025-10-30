@@ -50,3 +50,16 @@ export type GetGameStateResponse = {
   postId: string;
   gameState: GameState;
 };
+
+export type LeaderboardEntry = {
+  username: string;
+  score: number;
+  bestWord: string;
+};
+
+export type GetLeaderboardResponse = {
+  type: 'leaderboard';
+  postId: string;
+  leaderboard: LeaderboardEntry[];
+  dailyFragment: string;
+};
