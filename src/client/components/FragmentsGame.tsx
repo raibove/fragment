@@ -18,6 +18,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
   const [showWords, setShowWords] = useState(false);
   const [activeTab, setActiveTab] = useState<'score' | 'word'>('score');
   const [fragmentTimeLeft, setFragmentTimeLeft] = useState(0);
+  const [showAbout, setShowAbout] = useState(false);
 
   // Timer effect
   useEffect(() => {
@@ -74,6 +75,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       setCurrentInput('');
       setMessage(`New game started! Create words starting with "${data.gameState.fragment}"`);
       setShowLeaderboard(false);
+      setShowAbout(false);
     } catch (error) {
       setMessage('Failed to start new game. Please try again.');
       console.error('Error starting game:', error);
@@ -181,6 +183,89 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       return `${secs}s`;
     }
   };
+
+  // Show About Game modal
+  if (showAbout) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
+          <div className="text-center mb-6">
+            <h1 className="text-xl font-bold text-gray-800 mb-2">How to Play</h1>
+            <div className="w-12 h-1 bg-blue-500 rounded mx-auto"></div>
+          </div>
+
+          <div className="space-y-4 text-sm text-gray-700">
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <h3 className="font-semibold text-blue-800 mb-2">🎯 Objective</h3>
+              <p>Create the longest valid words starting with the daily fragment to earn points and climb the leaderboards!</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-1">⏱️ Game Rules</h4>
+                <ul className="space-y-1 text-xs text-gray-600 ml-4">
+                  <li>• You have 60 seconds per game</li>
+                  <li>• Words must start with the given fragment</li>
+                  <li>• Minimum 3 letters per word</li>
+                  <li>• Longer words earn more points</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-1">🏆 Scoring</h4>
+                <ul className="space-y-1 text-xs text-gray-600 ml-4">
+                  <li>• Base score = word length</li>
+                  <li>• Bonus points for words 6+ letters</li>
+                  <li>• Example: "alternate" (9 letters) = 17 points</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-1">📊 Leaderboards</h4>
+                <ul className="space-y-1 text-xs text-gray-600 ml-4">
+                  <li>• High Scores: Total points earned</li>
+                  <li>• Longest Words: Best single word</li>
+                  <li>• Daily reset at midnight</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-1">🌍 Daily Challenge</h4>
+                <ul className="space-y-1 text-xs text-gray-600 ml-4">
+                  <li>• Everyone gets the same fragment</li>
+                  <li>• New fragment every 24 hours</li>
+                  <li>• Compete globally with all players</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+              <p className="text-xs text-yellow-800">
+                <strong>💡 Pro Tip:</strong> Think of compound words, plurals, and different word forms to maximize your score!
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-6 space-y-2">
+            <button
+              onClick={startNewGame}
+              disabled={loading}
+              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-medium py-3 px-6 rounded-lg transition-colors shadow-sm"
+            >
+              {loading ? 'Starting...' : 'Start Playing'}
+            </button>
+            
+            <button
+              onClick={() => setShowAbout(false)}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-6 rounded-lg transition-colors"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Show simplified leaderboard view
   if (showLeaderboard) {
@@ -354,12 +439,21 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
                 {loading ? 'Starting...' : 'Start New Game'}
               </button>
               
-              <button
-                onClick={() => setShowLeaderboard(!showLeaderboard)}
-                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-6 rounded-lg transition-colors"
-              >
-                View Leaderboard
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowLeaderboard(!showLeaderboard)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  Leaderboard
+                </button>
+                
+                <button
+                  onClick={() => setShowAbout(true)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  How to Play
+                </button>
+              </div>
             </div>
           </div>
         ) : (
