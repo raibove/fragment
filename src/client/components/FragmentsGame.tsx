@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GameState, LeaderboardEntry } from '../../shared/types/api';
 
 interface FragmentsGameProps {
@@ -14,6 +14,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [dailyFragment, setDailyFragment] = useState<string>('');
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showWords, setShowWords] = useState(false);
 
   // Timer effect
   useEffect(() => {
@@ -47,6 +48,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       const data = await response.json();
       setLeaderboard(data.leaderboard);
       setDailyFragment(data.dailyFragment);
+      setShowWords(data.showWords);
     } catch (error) {
       console.error('Error loading leaderboard:', error);
     }
@@ -138,6 +140,83 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Show simplified leaderboard view
+  if (showLeaderboard) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Today's Leaderboard</h1>
+            {dailyFragment && (
+              <div className="bg-blue-50 rounded-lg p-3 mb-4">
+                <div className="text-sm text-gray-500">Fragment</div>
+                <div className="text-2xl font-bold text-blue-600">{dailyFragment}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {leaderboard.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">No scores yet today. Be the first!</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {leaderboard.map((entry, index) => (
+                  <div key={entry.username} className={`flex justify-between items-center rounded-lg p-3 ${entry.username === username ? 'bg-blue-100 border-2 border-blue-300' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`font-bold text-lg ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-500' : index === 2 ? 'text-orange-600' : 'text-gray-400'}`}>
+                        #{index + 1}
+                      </span>
+                      <span className={`font-medium ${entry.username === username ? 'text-blue-700' : 'text-gray-800'}`}>
+                        {entry.username} {entry.username === username ? '(You)' : ''}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-green-600 text-lg">{entry.score} pts</div>
+                      {showWords && entry.bestWord !== '***' && (
+                        <div className="text-sm text-gray-500">{entry.bestWord}</div>
+                      )}
+                      {!showWords && (
+                        <div className="text-xs text-gray-400">Words revealed at day end</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-center pt-4">
+              {!gameState ? (
+                <button
+                  onClick={startNewGame}
+                  disabled={loading}
+                  className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                >
+                  {loading ? 'Starting...' : 'Start New Game'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowLeaderboard(false)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                >
+                  Back to Game
+                </button>
+              )}
+              
+              <button
+                onClick={() => setShowLeaderboard(false)}
+                className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              >
+                {gameState ? 'Back' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
@@ -180,31 +259,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
               </button>
             </div>
 
-            {showLeaderboard && (
-              <div className="bg-gray-50 rounded-lg p-4 mt-4">
-                <h3 className="font-bold text-lg text-gray-800 mb-3">Today's Leaderboard</h3>
-                {leaderboard.length === 0 ? (
-                  <p className="text-gray-500">No scores yet today. Be the first!</p>
-                ) : (
-                  <div className="space-y-2">
-                    {leaderboard.map((entry, index) => (
-                      <div key={entry.username} className="flex justify-between items-center bg-white rounded p-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-bold ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-500' : index === 2 ? 'text-orange-600' : 'text-gray-400'}`}>
-                            #{index + 1}
-                          </span>
-                          <span className="font-medium">{entry.username}</span>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-green-600">{entry.score} pts</div>
-                          <div className="text-xs text-gray-500">{entry.bestWord}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+
           </div>
         ) : (
           <div className="space-y-4">
@@ -290,33 +345,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
                   </button>
                 </div>
 
-                {showLeaderboard && (
-                  <div className="bg-gray-50 rounded-lg p-4 mt-4">
-                    <h3 className="font-bold text-lg text-gray-800 mb-3">Today's Leaderboard</h3>
-                    {leaderboard.length === 0 ? (
-                      <p className="text-gray-500">No scores yet today.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {leaderboard.map((entry, index) => (
-                          <div key={entry.username} className={`flex justify-between items-center rounded p-2 ${entry.username === username ? 'bg-blue-100' : 'bg-white'}`}>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-bold ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-500' : index === 2 ? 'text-orange-600' : 'text-gray-400'}`}>
-                                #{index + 1}
-                              </span>
-                              <span className={`font-medium ${entry.username === username ? 'text-blue-700' : ''}`}>
-                                {entry.username} {entry.username === username ? '(You)' : ''}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-bold text-green-600">{entry.score} pts</div>
-                              <div className="text-xs text-gray-500">{entry.bestWord}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+
               </div>
             )}
 

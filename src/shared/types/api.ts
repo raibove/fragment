@@ -62,4 +62,5 @@ export type GetLeaderboardResponse = {
   postId: string;
   leaderboard: LeaderboardEntry[];
   dailyFragment: string;
+  showWords: boolean;
 };

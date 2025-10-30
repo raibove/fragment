@@ -280,4 +280,4 @@ export async function endGame(postId: string, username: string): Promise<GameSta
   return gameState;
 }
 
-export { getDailyFragment, getDailyLeaderboard };
+export { getDailyFragment, getDailyLeaderboard, getDailyLeaderboardWithWordVisibility };

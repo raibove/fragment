@@ -1,7 +1,7 @@
 import express from 'express';
-import { 
-  InitResponse, 
-  IncrementResponse, 
+import {
+  InitResponse,
+  IncrementResponse,
   DecrementResponse,
   NewGameResponse,
   SubmitWordRequest,
@@ -11,7 +11,7 @@ import {
 } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
-import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboard } from './core/fragments-game';
+import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboardWithWordVisibility } from './core/fragments-game';
 
 const app = express();
 
@@ -328,16 +328,17 @@ router.get<{ postId: string }, GetLeaderboardResponse | { status: string; messag
     }
 
     try {
-      const [leaderboard, dailyFragment] = await Promise.all([
-        getDailyLeaderboard(),
+      const [leaderboardData, dailyFragment] = await Promise.all([
+        getDailyLeaderboardWithWordVisibility(),
         getDailyFragment()
       ]);
 
       res.json({
         type: 'leaderboard',
         postId,
-        leaderboard,
+        leaderboard: leaderboardData.leaderboard,
         dailyFragment,
+        showWords: leaderboardData.showWords,
       });
     } catch (error) {
       console.error(`Error getting leaderboard: ${error}`);
