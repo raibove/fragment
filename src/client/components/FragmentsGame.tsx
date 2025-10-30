@@ -17,6 +17,7 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showWords, setShowWords] = useState(false);
   const [activeTab, setActiveTab] = useState<'score' | 'word'>('score');
+  const [fragmentTimeLeft, setFragmentTimeLeft] = useState(0);
 
   // Timer effect
   useEffect(() => {
@@ -126,6 +127,34 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
     }
   };
 
+  // Calculate time until next fragment (midnight)
+  const calculateFragmentTimeLeft = () => {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+    
+    return Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
+  };
+
+  // Fragment countdown timer effect
+  useEffect(() => {
+    // Set initial time
+    setFragmentTimeLeft(calculateFragmentTimeLeft());
+
+    const fragmentTimer = setInterval(() => {
+      const timeLeft = calculateFragmentTimeLeft();
+      setFragmentTimeLeft(timeLeft);
+      
+      // If fragment expired, reload to get new fragment
+      if (timeLeft <= 0) {
+        loadLeaderboard();
+      }
+    }, 1000);
+
+    return () => clearInterval(fragmentTimer);
+  }, []);
+
   // Load leaderboard on component mount
   useEffect(() => {
     loadLeaderboard();
@@ -139,6 +168,20 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const formatFragmentTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${mins}m ${secs}s`;
+    } else if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
   // Show simplified leaderboard view
   if (showLeaderboard) {
     return (
@@ -147,9 +190,17 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
           <div className="text-center mb-6">
             <h1 className="text-xl font-bold text-gray-800 mb-2">Leaderboard</h1>
             {dailyFragment && (
-              <div className="inline-flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-1 border border-blue-200">
-                <span className="text-lg font-bold text-blue-600">{dailyFragment}</span>
-                <span className="text-xs text-blue-700">Today's Fragment</span>
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-1 border border-blue-200">
+                  <span className="text-lg font-bold text-blue-600">{dailyFragment}</span>
+                  <span className="text-xs text-blue-700">Today's Fragment</span>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-gray-500">New fragment in:</div>
+                  <div className={`text-sm font-mono font-medium ${fragmentTimeLeft <= 3600 ? 'text-red-600' : 'text-gray-700'}`}>
+                    {formatFragmentTime(fragmentTimeLeft)}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -284,7 +335,13 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
             {dailyFragment && (
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
                 <div className="text-4xl font-bold text-blue-600 mb-2">{dailyFragment}</div>
-                <p className="text-sm text-blue-700">Today's Fragment</p>
+                <p className="text-sm text-blue-700 mb-2">Today's Fragment</p>
+                <div className="bg-white/50 rounded-lg px-3 py-2 inline-block">
+                  <div className="text-xs text-blue-600 mb-1">New fragment in:</div>
+                  <div className={`text-sm font-mono font-bold ${fragmentTimeLeft <= 3600 ? 'text-red-600' : 'text-blue-700'}`}>
+                    {formatFragmentTime(fragmentTimeLeft)}
+                  </div>
+                </div>
               </div>
             )}
             
