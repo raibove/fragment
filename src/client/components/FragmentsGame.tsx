@@ -19,6 +19,8 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
   const [activeTab, setActiveTab] = useState<'score' | 'word'>('score');
   const [fragmentTimeLeft, setFragmentTimeLeft] = useState(0);
   const [showAbout, setShowAbout] = useState(false);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
 
   // Timer effect
   useEffect(() => {
@@ -44,9 +46,10 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
     }
   }, [gameState]);
 
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = async (date?: string) => {
     try {
-      const response = await fetch('/api/leaderboard');
+      const url = date ? `/api/leaderboard?date=${date}` : '/api/leaderboard';
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to load leaderboard');
       
       const data = await response.json();
@@ -54,6 +57,8 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       setWordLeaderboard(data.wordLeaderboard || []);
       setDailyFragment(data.dailyFragment || '');
       setShowWords(data.showWords || false);
+      setAvailableDates(data.availableDates || []);
+      setSelectedDate(data.selectedDate || '');
     } catch (error) {
       console.error('Error loading leaderboard:', error);
     }
@@ -273,19 +278,54 @@ export const FragmentsGame: React.FC<FragmentsGameProps> = ({ username }) => {
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 w-full max-w-sm sm:max-w-md">
           <div className="text-center mb-6">
-            <h1 className="text-xl font-bold text-gray-800 mb-2">Leaderboard</h1>
+            <h1 className="text-xl font-bold text-gray-800 mb-3">Leaderboard</h1>
+            
+            {/* Date Selector */}
+            {availableDates.length > 1 && (
+              <div className="mb-4">
+                <select
+                  value={selectedDate}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setSelectedDate(newDate);
+                    loadLeaderboard(newDate);
+                  }}
+                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {availableDates.map((date) => {
+                    const dateObj = new Date(date);
+                    const isToday = date === new Date().toISOString().split('T')[0];
+                    const label = isToday ? 'Today' : dateObj.toLocaleDateString('en-US', { 
+                      weekday: 'short', 
+                      month: 'short', 
+                      day: 'numeric' 
+                    });
+                    return (
+                      <option key={date} value={date}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
             {dailyFragment && (
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-1 border border-blue-200">
                   <span className="text-lg font-bold text-blue-600">{dailyFragment}</span>
-                  <span className="text-xs text-blue-700">Today's Fragment</span>
+                  <span className="text-xs text-blue-700">
+                    {selectedDate === new Date().toISOString().split('T')[0] ? "Today's Fragment" : "Fragment"}
+                  </span>
                 </div>
-                <div className="text-center">
-                  <div className="text-xs text-gray-500">New fragment in:</div>
-                  <div className={`text-sm font-mono font-medium ${fragmentTimeLeft <= 3600 ? 'text-red-600' : 'text-gray-700'}`}>
-                    {formatFragmentTime(fragmentTimeLeft)}
+                {selectedDate === new Date().toISOString().split('T')[0] && (
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500">New fragment in:</div>
+                    <div className={`text-sm font-mono font-medium ${fragmentTimeLeft <= 3600 ? 'text-red-600' : 'text-gray-700'}`}>
+                      {formatFragmentTime(fragmentTimeLeft)}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

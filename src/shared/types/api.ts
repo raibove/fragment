@@ -64,4 +64,6 @@ export type GetLeaderboardResponse = {
   wordLeaderboard: LeaderboardEntry[];
   dailyFragment: string;
   showWords: boolean;
+  availableDates?: string[];
+  selectedDate?: string;
 };

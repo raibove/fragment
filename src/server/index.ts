@@ -11,7 +11,7 @@ import {
 } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
-import { createNewGame, getGameState, submitWord, endGame, getDailyFragment, getDailyLeaderboardsWithWordVisibility } from './core/fragments-game';
+import { createNewGame, getGameState, submitWord, endGame, getDailyLeaderboardsWithWordVisibility, getAvailableDates } from './core/fragments-game';
 
 const app = express();
 
@@ -317,7 +317,7 @@ router.post<{ postId: string }, GetGameStateResponse | { status: string; message
 
 router.get<{ postId: string }, GetLeaderboardResponse | { status: string; message: string }>(
   '/api/leaderboard',
-  async (_req, res): Promise<void> => {
+  async (req, res): Promise<void> => {
     const { postId } = context;
     if (!postId) {
       res.status(400).json({
@@ -328,9 +328,10 @@ router.get<{ postId: string }, GetLeaderboardResponse | { status: string; messag
     }
 
     try {
-      const [leaderboardData, dailyFragment] = await Promise.all([
-        getDailyLeaderboardsWithWordVisibility(),
-        getDailyFragment()
+      const selectedDate = req.query.date as string;
+      const [leaderboardData, availableDates] = await Promise.all([
+        getDailyLeaderboardsWithWordVisibility(selectedDate),
+        getAvailableDates()
       ]);
 
       res.json({
@@ -338,8 +339,10 @@ router.get<{ postId: string }, GetLeaderboardResponse | { status: string; messag
         postId,
         scoreLeaderboard: leaderboardData.scoreLeaderboard,
         wordLeaderboard: leaderboardData.wordLeaderboard,
-        dailyFragment,
+        dailyFragment: leaderboardData.fragment,
         showWords: leaderboardData.showWords,
+        availableDates,
+        selectedDate: leaderboardData.date,
       });
     } catch (error) {
       console.error(`Error getting leaderboard: ${error}`);

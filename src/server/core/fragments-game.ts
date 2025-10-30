@@ -40,17 +40,12 @@ async function getDailyFragment(): Promise<string> {
     // Generate new fragment for today
     fragment = getRandomFragment();
     
-    // Store with expiration at end of day (24 hours from now)
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+    // Store with 7-day expiration to keep historical data
+    const sevenDaysInSeconds = 7 * 24 * 60 * 60;
     
-    const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
+    await redis.set(fragmentKey, fragment, { expiration: new Date(Date.now() + sevenDaysInSeconds * 1000) });
     
-    await redis.set(fragmentKey, fragment, { expiration: new Date(Date.now() + secondsUntilMidnight * 1000) });
-    
-    console.log(`New daily fragment set: ${fragment} (expires in ${secondsUntilMidnight} seconds)`);
+    console.log(`New daily fragment set: ${fragment} (expires in 7 days)`);
   }
   
   return fragment || getRandomFragment(); // Fallback in case of null
@@ -100,16 +95,23 @@ function isDayComplete(): boolean {
   return timeUntilMidnight <= oneHour;
 }
 
-async function getDailyLeaderboardsWithWordVisibility(): Promise<{
+async function getDailyLeaderboardsWithWordVisibility(dateKey?: string | undefined): Promise<{
   scoreLeaderboard: Array<{username: string, score: number, bestWord: string}>,
   wordLeaderboard: Array<{username: string, score: number, bestWord: string}>,
-  showWords: boolean
+  showWords: boolean,
+  fragment: string,
+  date: string
 }> {
-  const [scoreLeaderboard, wordLeaderboard] = await Promise.all([
-    getDailyScoreLeaderboard(),
-    getDailyWordLeaderboard()
+  const targetDate: string = dateKey || getCurrentDateKey();
+  const [scoreLeaderboard, wordLeaderboard, fragment] = await Promise.all([
+    getDailyScoreLeaderboardByDate(targetDate),
+    getDailyWordLeaderboardByDate(targetDate),
+    getDailyFragmentByDate(targetDate)
   ]);
-  const showWords = isDayComplete();
+  
+  // Only show words if it's a past date or if current day is complete
+  const isCurrentDay = targetDate === getCurrentDateKey();
+  const showWords = !isCurrentDay || isDayComplete();
   
   const hideWords = (leaderboard: Array<{username: string, score: number, bestWord: string}>, isWordLeaderboard: boolean = false) => {
     if (showWords) {
@@ -128,8 +130,72 @@ async function getDailyLeaderboardsWithWordVisibility(): Promise<{
   return {
     scoreLeaderboard: hideWords(scoreLeaderboard, false),
     wordLeaderboard: hideWords(wordLeaderboard, true),
-    showWords
+    showWords,
+    fragment,
+    date: targetDate
   };
+}
+
+async function getDailyScoreLeaderboardByDate(dateKey: string): Promise<Array<{username: string, score: number, bestWord: string}>> {
+  const leaderboardKey = `daily_score_leaderboard:${dateKey}`;
+  
+  try {
+    const leaderboardData = await redis.get(leaderboardKey);
+    if (!leaderboardData) return [];
+    
+    return JSON.parse(leaderboardData);
+  } catch (error) {
+    console.error('Failed to get score leaderboard for date:', dateKey, error);
+    return [];
+  }
+}
+
+async function getDailyWordLeaderboardByDate(dateKey: string): Promise<Array<{username: string, score: number, bestWord: string}>> {
+  const leaderboardKey = `daily_word_leaderboard:${dateKey}`;
+  
+  try {
+    const leaderboardData = await redis.get(leaderboardKey);
+    if (!leaderboardData) return [];
+    
+    return JSON.parse(leaderboardData);
+  } catch (error) {
+    console.error('Failed to get word leaderboard for date:', dateKey, error);
+    return [];
+  }
+}
+
+async function getDailyFragmentByDate(dateKey: string): Promise<string> {
+  const fragmentKey = `daily_fragment:${dateKey}`;
+  
+  try {
+    const fragment = await redis.get(fragmentKey);
+    return fragment || '';
+  } catch (error) {
+    console.error('Failed to get fragment for date:', dateKey, error);
+    return '';
+  }
+}
+
+async function getAvailableDates(): Promise<string[]> {
+  const dates: string[] = [];
+  const today = new Date();
+  
+  // Get past 7 days including today
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateKey = date.toISOString().split('T')[0] || '';
+    
+    // Check if we have data for this date
+    const fragmentKey = `daily_fragment:${dateKey}`;
+    const hasData = await redis.get(fragmentKey);
+    
+    if (hasData && dateKey) {
+      dates.push(dateKey);
+    }
+  }
+  
+  return dates;
 }
 
 async function updateDailyLeaderboards(username: string, score: number, bestWord: string): Promise<void> {
@@ -179,15 +245,10 @@ async function updateDailyLeaderboards(username: string, score: number, bestWord
     wordLeaderboard.sort((a, b) => (b.bestWord?.length || 0) - (a.bestWord?.length || 0));
     const topWordLeaderboard = wordLeaderboard.slice(0, 10);
     
-    // Store with same expiration as daily fragment
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
+    // Store with 7-day expiration to keep historical data
+    const sevenDaysInSeconds = 7 * 24 * 60 * 60;
+    const expirationDate = new Date(Date.now() + sevenDaysInSeconds * 1000);
     
-    const secondsUntilMidnight = Math.floor((tomorrow.getTime() - now.getTime()) / 1000);
-    
-    const expirationDate = new Date(Date.now() + secondsUntilMidnight * 1000);
     await Promise.all([
       redis.set(scoreLeaderboardKey, JSON.stringify(topScoreLeaderboard), { expiration: expirationDate }),
       redis.set(wordLeaderboardKey, JSON.stringify(topWordLeaderboard), { expiration: expirationDate })
@@ -325,4 +386,4 @@ export async function endGame(postId: string, username: string): Promise<GameSta
   return gameState;
 }
 
-export { getDailyFragment, getDailyScoreLeaderboard, getDailyWordLeaderboard, getDailyLeaderboardsWithWordVisibility };
+export { getDailyFragment, getDailyScoreLeaderboard, getDailyWordLeaderboard, getDailyLeaderboardsWithWordVisibility, getAvailableDates };
