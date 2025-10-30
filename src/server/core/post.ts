@@ -10,10 +10,9 @@ export const createPost = async () => {
     splash: {
       // Splash Screen Configuration
       appDisplayName: 'Word Fragments',
-      backgroundUri: 'default-splash.png',
-      buttonLabel: 'Play Game',
-      description: 'Test your vocabulary! Create the longest words from letter fragments.',
-      entryUri: 'index.html',
+      backgroundUri: 'splash.png',
+      buttonLabel: '🎯 Start Playing',
+      description: 'Daily vocabulary challenge! Create the longest words from letter fragments. Compete on global leaderboards and track your progress over time.',
       heading: '🧩 Word Fragments Challenge',
       appIconUri: 'default-icon.png',
     },
@@ -22,6 +21,6 @@ export const createPost = async () => {
       version: '1.0',
     },
     subredditName: subredditName,
-    title: '🧩 Word Fragments - Vocabulary Challenge Game',
+    title: '🧩 Word Fragments - Daily Vocabulary Challenge',
   });
 };
