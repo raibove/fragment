@@ -9,19 +9,19 @@ export const createPost = async () => {
   return await reddit.submitCustomPost({
     splash: {
       // Splash Screen Configuration
-      appDisplayName: 'fragments-word',
+      appDisplayName: 'Word Fragments',
       backgroundUri: 'default-splash.png',
-      buttonLabel: 'Tap to Start',
-      description: 'An exciting interactive experience',
+      buttonLabel: 'Play Game',
+      description: 'Test your vocabulary! Create the longest words from letter fragments.',
       entryUri: 'index.html',
-      heading: 'Welcome to the Game!',
+      heading: '🧩 Word Fragments Challenge',
       appIconUri: 'default-icon.png',
     },
     postData: {
-      gameState: 'initial',
-      score: 0,
+      gameType: 'fragments',
+      version: '1.0',
     },
     subredditName: subredditName,
-    title: 'fragments-word',
+    title: '🧩 Word Fragments - Vocabulary Challenge Game',
   });
 };

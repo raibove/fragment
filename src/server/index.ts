@@ -1,7 +1,16 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import { 
+  InitResponse, 
+  IncrementResponse, 
+  DecrementResponse,
+  NewGameResponse,
+  SubmitWordRequest,
+  SubmitWordResponse,
+  GetGameStateResponse
+} from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
+import { createNewGame, getGameState, submitWord, endGame } from './core/fragments-game';
 
 const app = express();
 
@@ -123,6 +132,151 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
     });
   }
 });
+
+// Fragments Game Endpoints
+router.post<{ postId: string }, NewGameResponse | { status: string; message: string }>(
+  '/api/new-game',
+  async (_req, res): Promise<void> => {
+    const { postId } = context;
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required',
+      });
+      return;
+    }
+
+    try {
+      const gameState = await createNewGame(postId);
+      res.json({
+        type: 'new-game',
+        postId,
+        gameState,
+      });
+    } catch (error) {
+      console.error(`Error creating new game: ${error}`);
+      res.status(400).json({
+        status: 'error',
+        message: 'Failed to create new game',
+      });
+    }
+  }
+);
+
+router.get<{ postId: string }, GetGameStateResponse | { status: string; message: string }>(
+  '/api/game-state',
+  async (_req, res): Promise<void> => {
+    const { postId } = context;
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required',
+      });
+      return;
+    }
+
+    try {
+      const gameState = await getGameState(postId);
+      if (!gameState) {
+        res.status(404).json({
+          status: 'error',
+          message: 'Game not found',
+        });
+        return;
+      }
+
+      res.json({
+        type: 'game-state',
+        postId,
+        gameState,
+      });
+    } catch (error) {
+      console.error(`Error getting game state: ${error}`);
+      res.status(400).json({
+        status: 'error',
+        message: 'Failed to get game state',
+      });
+    }
+  }
+);
+
+router.post<{ postId: string }, SubmitWordResponse | { status: string; message: string }, SubmitWordRequest>(
+  '/api/submit-word',
+  async (req, res): Promise<void> => {
+    const { postId } = context;
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required',
+      });
+      return;
+    }
+
+    const { word } = req.body;
+    if (!word || typeof word !== 'string') {
+      res.status(400).json({
+        status: 'error',
+        message: 'Word is required',
+      });
+      return;
+    }
+
+    try {
+      const result = await submitWord(postId, word.trim());
+      res.json({
+        type: 'submit-word',
+        postId,
+        valid: result.valid,
+        score: result.score,
+        gameState: result.gameState,
+        message: result.message,
+      });
+    } catch (error) {
+      console.error(`Error submitting word: ${error}`);
+      res.status(400).json({
+        status: 'error',
+        message: 'Failed to submit word',
+      });
+    }
+  }
+);
+
+router.post<{ postId: string }, GetGameStateResponse | { status: string; message: string }>(
+  '/api/end-game',
+  async (_req, res): Promise<void> => {
+    const { postId } = context;
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required',
+      });
+      return;
+    }
+
+    try {
+      const gameState = await endGame(postId);
+      if (!gameState) {
+        res.status(404).json({
+          status: 'error',
+          message: 'Game not found',
+        });
+        return;
+      }
+
+      res.json({
+        type: 'game-state',
+        postId,
+        gameState,
+      });
+    } catch (error) {
+      console.error(`Error ending game: ${error}`);
+      res.status(400).json({
+        status: 'error',
+        message: 'Failed to end game',
+      });
+    }
+  }
+);
 
 // Use router middleware
 app.use(router);
